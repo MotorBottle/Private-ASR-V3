@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private ASR V3</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <div class="app-container">
+            <nav class="top-bar" v-if="isAuthenticated && currentView !== 'login'">
+                <div class="nav-left">
+                    <button class="nav-btn" @click="goBack" v-if="canGoBack" title="Back">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                </div>
+                <div class="nav-center">
+                    <div class="page-title" v-if="currentView === 'home'">
+                        <i class="fas fa-microphone-alt"></i>
+                        <span>Audio Records</span>
+                    </div>
+                    <div class="page-title detail-title" v-else-if="currentView === 'detail' && currentRecord">
+                        <div class="title-container">
+                            <span class="editable-title" @click="editDetailTitle" v-if="!editingDetailTitle">
+                                {{ currentRecord.title }}
+                            </span>
+                            <input
+                                v-else
+                                v-model="detailTitleEdit"
+                                @blur="saveDetailTitle"
+                                @keyup.enter="saveDetailTitle"
+                                class="title-input"
+                                ref="detailTitleInput"
+                            >
+                            <button class="edit-btn" @click="editDetailTitle" v-if="!editingDetailTitle" title="Edit title">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </div>
+                        <div class="record-date">
+                            Created {{ formatDate(currentRecord.created_at) }}
+                            <span v-if="currentUser?.username">by {{ currentUser.username }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-right">
+                    <button class="nav-btn" @click="showMoreModal = true" v-if="currentView === 'detail'" title="More options">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <button class="nav-btn" @click="logout" v-if="currentView === 'home'" title="Logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </nav>
+
+            <div v-if="currentView === 'login'" class="login-view">
+                <div class="login-card">
+                    <div class="login-header">
+                        <i class="fas fa-microphone-alt"></i>
+                        <h1>Private ASR V3</h1>
+                    </div>
+                    <form @submit.prevent="login" class="login-form">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input
+                                type="text"
+                                v-model="loginForm.username"
+                                required
+                                class="form-input"
+                                :class="{ error: loginError }"
+                            >
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input
+                                type="password"
+                                v-model="loginForm.password"
+                                required
+                                class="form-input"
+                                :class="{ error: loginError }"
+                            >
+                            <div v-if="loginError" class="form-error">{{ loginError }}</div>
+                        </div>
+                        <button type="submit" class="btn-primary" :disabled="loginLoading">
+                            {{ loginLoading ? 'Logging in...' : 'Login' }}
+                        </button>
+                        <div class="login-footer">
+                            <button type="button" @click="showRegister = true" class="btn-link">
+                                Don't have an account? Register
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div v-if="showRegister" class="modal-overlay" @click="showRegister = false">
+                    <div class="modal-content" @click.stop>
+                        <div class="modal-header">
+                            <h2>Register</h2>
+                            <button @click="showRegister = false" class="modal-close">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <form @submit.prevent="register" class="modal-form">
+                            <div class="form-group">
+                                <label>Username</label>
+                                <input
+                                    type="text"
+                                    v-model="registerForm.username"
+                                    required
+                                    class="form-input"
+                                    :class="{ error: registerErrors.username }"
+                                >
+                                <div class="form-help">3-20 characters, letters, numbers, and underscores only</div>
+                                <div v-if="registerErrors.username" class="form-error">{{ registerErrors.username }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Email (optional)</label>
+                                <input
+                                    type="email"
+                                    v-model="registerForm.email"
+                                    class="form-input"
+                                    :class="{ error: registerErrors.email }"
+                                >
+                                <div v-if="registerErrors.email" class="form-error">{{ registerErrors.email }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Password</label>
+                                <input
+                                    type="password"
+                                    v-model="registerForm.password"
+                                    required
+                                    class="form-input"
+                                    :class="{ error: registerErrors.password }"
+                                >
+                                <div class="form-help">Minimum 6 characters</div>
+                                <div v-if="registerErrors.password" class="form-error">{{ registerErrors.password }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>邀请码 (Invitation Code)</label>
+                                <input
+                                    type="text"
+                                    v-model="registerForm.invitationCode"
+                                    required
+                                    class="form-input"
+                                    :class="{ error: registerErrors.invitationCode }"
+                                    placeholder="请输入邀请码"
+                                >
+                                <div class="form-help">需要有效的邀请码才能注册</div>
+                                <div v-if="registerErrors.invitationCode" class="form-error">{{ registerErrors.invitationCode }}</div>
+                            </div>
+                            <button type="submit" class="btn-primary" :disabled="registerLoading">
+                                {{ registerLoading ? 'Registering...' : 'Register' }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="currentView === 'home' && isAuthenticated" class="home-view">
+                <div class="home-header">
+                    <div class="action-buttons">
+                        <button class="new-record-btn" @click="loadRecords" :disabled="recordsLoading">
+                            <i class="fas" :class="recordsLoading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i>
+                            <span>{{ recordsLoading ? 'Refreshing' : 'Refresh' }}</span>
+                        </button>
+                        <button class="upload-btn" @click="triggerFileUpload">
+                            <i class="fas fa-upload"></i>
+                            <span>Upload File</span>
+                        </button>
+                    </div>
+
+                    <div class="records-controls">
+                        <div class="sort-options">
+                            <label class="sort-label">Sort by:</label>
+                            <button
+                                class="sort-btn"
+                                :class="{ active: sortBy === 'created_at' }"
+                                @click="setSortBy('created_at')"
+                            >
+                                Create Time
+                            </button>
+                            <button
+                                class="sort-btn"
+                                :class="{ active: sortBy === 'received_at' }"
+                                @click="setSortBy('received_at')"
+                            >
+                                Add Time
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="records-list">
+                    <div v-if="sortedRecords.length === 0" class="empty-state">
+                        <i class="fas fa-microphone-alt"></i>
+                        <h3>No recordings yet</h3>
+                        <p>Tap "Upload File" to get started</p>
+                    </div>
+
+                    <div v-for="record in sortedRecords" :key="record.id" class="record-item" @click="viewRecord(record)">
+                        <div class="record-info">
+                            <div class="record-header">
+                                <h3 class="record-title">{{ record.title }}</h3>
+                                <div class="record-status" v-if="record.processing_status">
+                                    <i :class="getStatusIcon(record.processing_status)"></i>
+                                    <span :class="'status-' + record.processing_status">{{ record.processing_status }}</span>
+                                </div>
+                            </div>
+                            <div class="record-meta">
+                                <span class="record-creator" v-if="currentUser?.username">{{ currentUser.username }}</span>
+                                <span class="record-date">{{ formatDate(sortBy === 'received_at' ? record.received_at : record.created_at) }}</span>
+                                <span class="record-duration">{{ formatDuration(record.duration) }}</span>
+                            </div>
+                        </div>
+                        <div class="record-actions">
+                            <button class="action-btn" @click.stop="shareRecord(record)" title="Copy shareable link">
+                                <i class="fas fa-share-alt"></i>
+                            </button>
+                            <button class="action-btn" @click.stop="deleteRecord(record)" title="Delete record">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="currentView === 'detail' && isAuthenticated" class="detail-view">
+                <div class="audio-player" v-if="currentRecord">
+                    <audio :src="getAudioUrl(currentRecord)" controls class="audio-control" ref="audioPlayer"></audio>
+                </div>
+
+                <div class="transcript-detail">
+                    <div v-if="currentRecord?.processing_status" class="processing-status-header">
+                        <div class="status-info">
+                            <i :class="getStatusIcon(currentRecord.processing_status)"></i>
+                            <span class="status-label">Processing Status:</span>
+                            <span :class="'status-' + currentRecord.processing_status">
+                                {{ currentRecord.processing_status }}
+                            </span>
+                        </div>
+                        <div class="status-actions">
+                            <button class="btn-refresh" @click="refreshRecord()" :disabled="refreshing">
+                                <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshing }"></i>
+                                {{ refreshing ? 'Refreshing...' : 'Refresh' }}
+                            </button>
+                            <button class="btn-reprocess" @click="reprocessRecord" :disabled="reprocessing">
+                                <i class="fas fa-redo" :class="{ 'fa-spin': reprocessing }"></i>
+                                {{ reprocessing ? 'Reprocessing...' : 'Reprocess' }}
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="currentRecord?.last_error" class="processing-error">
+                        {{ currentRecord.last_error }}
+                    </div>
+
+                    <div class="tab-container">
+                        <div class="tab-nav">
+                            <button
+                                class="tab-btn"
+                                :class="{ active: activeTab === 'transcript' }"
+                                @click="setActiveTab('transcript')"
+                            >
+                                Transcript
+                            </button>
+                            <button
+                                class="tab-btn"
+                                :class="{ active: activeTab === 'detailed' }"
+                                @click="setActiveTab('detailed')"
+                            >
+                                Detailed
+                            </button>
+                            <button
+                                class="tab-btn"
+                                :class="{ active: activeTab === 'speakers' }"
+                                @click="setActiveTab('speakers')"
+                            >
+                                Speakers
+                            </button>
+                            <button
+                                class="tab-btn"
+                                :class="{ active: activeTab === 'summary' }"
+                                @click="setActiveTab('summary')"
+                            >
+                                Summary
+                            </button>
+                        </div>
+
+                        <div class="tab-content">
+                            <div v-if="activeTab === 'transcript'" class="tab-pane">
+                                <h3><i class="fas fa-file-text"></i> Transcript</h3>
+
+                                <div class="tab-pane-content">
+                                    <div class="recording-info-section">
+                                        <h4><i class="fas fa-info-circle"></i> Recording Information</h4>
+                                        <div class="recording-info-grid">
+                                            <div class="info-row">
+                                                <label class="info-label">Title:</label>
+                                                <span class="info-value">{{ currentRecord?.title || 'Untitled' }}</span>
+                                            </div>
+                                            <div class="info-row">
+                                                <label class="info-label">Duration:</label>
+                                                <span class="info-value">{{ formatDuration(currentRecord?.duration) }}</span>
+                                            </div>
+                                            <div class="info-row">
+                                                <label class="info-label">Created:</label>
+                                                <span class="info-value">{{ formatDateTime(currentRecord?.created_at) }}</span>
+                                            </div>
+                                            <div class="info-row">
+                                                <label class="info-label">Added:</label>
+                                                <span class="info-value">{{ formatDateTime(currentRecord?.received_at) }}</span>
+                                            </div>
+                                            <div class="info-row">
+                                                <label class="info-label">Creator:</label>
+                                                <span class="info-value">{{ currentUser?.username || 'Unknown' }}</span>
+                                            </div>
+                                            <div class="info-row">
+                                                <label class="info-label">Language:</label>
+                                                <span class="info-value">{{ currentRecord?.language_hint || 'Default' }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="currentRecord?.transcript" class="transcript-text">
+                                        {{ currentRecord.transcript }}
+                                    </div>
+                                    <div v-else class="placeholder-content transcript-placeholder-pane">
+                                        <i class="fas fa-file-alt"></i>
+                                        <h3>No Transcript Yet</h3>
+                                        <p v-if="currentRecord?.processing_status === 'queued' || currentRecord?.processing_status === 'transcribing'">
+                                            Transcription is in progress.
+                                        </p>
+                                        <p v-else-if="currentRecord?.processing_status === 'uploaded'">
+                                            Upload completed. Start processing to generate a transcript.
+                                        </p>
+                                        <p v-else-if="currentRecord?.processing_status === 'failed'">
+                                            Processing failed. Reprocess the file to try again.
+                                        </p>
+                                        <p v-else>
+                                            Transcript content will appear here after processing.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="activeTab === 'detailed'" class="tab-pane">
+                                <div v-if="editableSegments.length > 0" class="srt-content">
+                                    <h3><i class="fas fa-clock"></i> Speaker Transcription
+                                        <small class="srt-help">Click to jump to time • Double-click to edit</small>
+                                    </h3>
+                                    <div class="srt-blocks">
+                                        <div
+                                            v-for="block in editableSegments"
+                                            :key="getBlockKey(block)"
+                                            class="srt-block"
+                                            @click="jumpToTime((block.start_ms || 0) / 1000)"
+                                            @dblclick="startEditingBlock(block)"
+                                        >
+                                            <div class="srt-block-header">
+                                                <span class="speaker-tag">{{ block.speaker_label || 'Unknown' }}</span>
+                                                <span class="timestamp">{{ formatSegmentTime(block.start_ms) }} → {{ formatSegmentTime(block.end_ms) }}</span>
+                                                <span class="duration">({{ formatSegmentDuration(block) }})</span>
+                                            </div>
+                                            <div class="srt-block-content">
+                                                <div v-if="editingBlockId !== getBlockKey(block)" class="srt-text">
+                                                    {{ block.text }}
+                                                </div>
+                                                <div v-else class="srt-edit">
+                                                    <textarea
+                                                        :id="'edit-input-' + getBlockKey(block)"
+                                                        v-model="block.text"
+                                                        @blur="stopEditingBlock(block, true)"
+                                                        @keydown.enter.exact.prevent="stopEditingBlock(block, true)"
+                                                        @keydown.escape.prevent="stopEditingBlock(block, false)"
+                                                        class="srt-text-input"
+                                                        rows="2"
+                                                    ></textarea>
+                                                    <div class="edit-hint">
+                                                        <small>Enter to save • Escape to cancel</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="placeholder-content">
+                                    <i class="fas fa-file-alt"></i>
+                                    <h3>Detailed Transcription</h3>
+                                    <p v-if="currentRecord?.processing_status === 'queued' || currentRecord?.processing_status === 'transcribing' || currentRecord?.processing_status === 'summarizing'">
+                                        Processing audio with speaker diarization and summary generation...
+                                    </p>
+                                    <p v-else-if="currentRecord?.processing_status === 'failed'">
+                                        Processing failed. Please try again.
+                                    </p>
+                                    <p v-else-if="currentRecord?.processing_status === 'uploaded'">
+                                        Start processing to generate diarized segments.
+                                    </p>
+                                    <p v-else>
+                                        Speaker diarization will appear here after processing.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div v-if="activeTab === 'speakers'" class="tab-pane">
+                                <h3><i class="fas fa-users"></i> Speaker Management</h3>
+
+                                <div class="tab-pane-content">
+                                    <div v-if="speakers.length > 0" class="speaker-management">
+                                        <p>Rename speakers to replace IDs in the detailed transcription:</p>
+
+                                        <div class="speaker-list">
+                                            <div v-for="speaker in speakers" :key="speaker.label" class="speaker-item">
+                                                <label class="speaker-label">{{ speaker.label }}:</label>
+                                                <input
+                                                    type="text"
+                                                    v-model="speakerDrafts[speaker.label]"
+                                                    :placeholder="`Enter name for ${speaker.label}`"
+                                                    class="speaker-input form-input"
+                                                >
+                                                <small class="speaker-count">{{ speaker.segment_count }} occurrences</small>
+                                            </div>
+                                        </div>
+
+                                        <div class="speaker-actions">
+                                            <button class="btn-primary" @click="applySpeakerNames">
+                                                Apply Speaker Names
+                                            </button>
+                                            <button class="btn-secondary" @click="resetSpeakerNames">
+                                                Reset to Original
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div v-else class="placeholder-content">
+                                        <i class="fas fa-users"></i>
+                                        <h3>No Speaker Data</h3>
+                                        <p v-if="currentRecord?.processing_status === 'queued' || currentRecord?.processing_status === 'transcribing' || currentRecord?.processing_status === 'summarizing'">
+                                            Processing audio with speaker diarization and summary generation...
+                                        </p>
+                                        <p v-else-if="currentRecord?.processing_status === 'failed'">
+                                            Processing failed. Please try again.
+                                        </p>
+                                        <p v-else-if="currentRecord?.processing_status === 'uploaded'">
+                                            Start processing to extract speaker labels.
+                                        </p>
+                                        <p v-else>
+                                            Speaker identification will appear here after processing.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="activeTab === 'summary'" class="tab-pane">
+                                <div v-if="currentRecord && currentRecord.summary">
+                                    <div class="tab-pane-header">
+                                        <h3><i class="fas fa-magic"></i> AI Summary</h3>
+                                        <button class="btn-secondary small-btn" @click="regenerateSummary" :disabled="summaryRefreshing">
+                                            <i class="fas fa-sync-alt" :class="{ 'fa-spin': summaryRefreshing }"></i>
+                                            {{ summaryRefreshing ? 'Refreshing...' : 'Regenerate' }}
+                                        </button>
+                                    </div>
+                                    <div class="markdown-content" v-html="renderMarkdown(currentRecord.summary)"></div>
+                                </div>
+                                <div v-else-if="currentRecord && currentRecord.processing_status === 'summarizing'" class="placeholder-content">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    <h3>Generating Summary</h3>
+                                    <p>AI is analyzing the transcript and generating insights...</p>
+                                </div>
+                                <div v-else-if="currentRecord && currentRecord.processing_status === 'completed' && !currentRecord.summary" class="placeholder-content">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <h3>Summary Not Available</h3>
+                                    <p>Summary generation was not enabled or failed for this record.</p>
+                                    <button class="btn-primary summary-regenerate-btn" @click="regenerateSummary" :disabled="summaryRefreshing">
+                                        Regenerate Summary
+                                    </button>
+                                </div>
+                                <div v-else-if="currentRecord && currentRecord.processing_status === 'uploaded'" class="placeholder-content">
+                                    <i class="fas fa-brain"></i>
+                                    <h3>AI Summary</h3>
+                                    <p>Start processing to generate transcript and summary artifacts.</p>
+                                </div>
+                                <div v-else class="placeholder-content">
+                                    <i class="fas fa-brain"></i>
+                                    <h3>AI Summary</h3>
+                                    <p>AI-generated summary and key insights will be available here after processing.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="!isAuthenticated && currentView !== 'login'" class="auth-required-view">
+                <div class="auth-required-content">
+                    <i class="fas fa-lock auth-icon"></i>
+                    <h2>Authentication Required</h2>
+                    <p>Please log in to access this content.</p>
+                    <button class="btn-primary" @click="currentView = 'login'">
+                        <i class="fas fa-sign-in-alt"></i> Go to Login
+                    </button>
+                </div>
+            </div>
+
+            <div v-if="showMoreModal" class="modal-overlay" @click="showMoreModal = false">
+                <div class="modal-content" @click.stop>
+                    <div class="modal-header">
+                        <h2>More Options</h2>
+                        <button @click="showMoreModal = false" class="modal-close">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="modal-actions" v-if="currentView === 'detail' && currentRecord">
+                        <button class="modal-action-btn" @click="downloadAudio">
+                            <i class="fas fa-download"></i>
+                            <span>Download Audio</span>
+                        </button>
+                        <button class="modal-action-btn" @click="downloadTranscript">
+                            <i class="fas fa-file-text"></i>
+                            <span>Download Transcript</span>
+                        </button>
+                        <button class="modal-action-btn" @click="downloadDetailedTranscript" v-if="editableSegments.length > 0">
+                            <i class="fas fa-clock"></i>
+                            <span>Download Timestamped</span>
+                        </button>
+                        <button class="modal-action-btn" @click="downloadSummary" v-if="currentRecord.summary">
+                            <i class="fas fa-magic"></i>
+                            <span>Download Summary</span>
+                        </button>
+                        <button class="modal-action-btn danger" @click="deleteCurrentRecord">
+                            <i class="fas fa-trash"></i>
+                            <span>Delete Record</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="uploadModal.show" class="modal-overlay">
+                <div class="modal-content upload-modal" @click.stop>
+                    <div class="modal-header">
+                        <h2>
+                            <i class="fas fa-upload"></i>
+                            {{ uploadModalTitle }}
+                        </h2>
+                        <button @click="closeUploadModal" class="modal-close" :disabled="uploadModal.stage === 'uploading'">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="upload-content">
+                        <div v-if="uploadModal.stage === 'initial' || uploadModal.stage === 'uploading' || uploadModal.stage === 'uploaded'" class="upload-initial">
+                            <div v-if="uploadModal.stage === 'initial'"
+                                 class="drag-drop-area"
+                                 @drop="handleFileDrop($event)"
+                                 @dragover.prevent="isDragOver = true"
+                                 @dragenter.prevent="isDragOver = true"
+                                 @dragleave="isDragOver = false"
+                                 :class="{ 'drag-over': isDragOver }"
+                                 @click="triggerFileInput">
+                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                <div class="upload-text">
+                                    <div class="primary-text">Drag &amp; drop audio/video file here</div>
+                                    <div class="secondary-text">or click to browse</div>
+                                    <div class="supported-formats">Supports: WAV, MP3, M4A, AAC, FLAC, OGG, WebM, MP4, MOV and similar formats</div>
+                                </div>
+                                <input ref="fileInput" type="file" @change="handleFileSelect" style="display: none;">
+                            </div>
+
+                            <div v-if="uploadModal.stage === 'uploading' || uploadModal.stage === 'uploaded'" class="file-upload-progress">
+                                <div class="file-info">
+                                    <i class="fas fa-file-audio"></i>
+                                    <div class="file-details">
+                                        <div class="file-name">{{ uploadModal.fileName }}</div>
+                                        <div class="file-size">{{ formatFileSize(uploadModal.fileSize) }}</div>
+                                    </div>
+                                    <div v-if="uploadModal.stage === 'uploaded'" class="upload-success-indicator">
+                                        <i class="fas fa-check-circle"></i>
+                                    </div>
+                                </div>
+
+                                <div v-if="uploadModal.stage === 'uploading'" class="progress-info">
+                                    <div class="progress-label">Uploading...</div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" :style="{ width: uploadModal.progress + '%' }"></div>
+                                    </div>
+                                    <div class="progress-text">{{ uploadModal.progress }}%</div>
+                                </div>
+
+                                <div v-if="uploadModal.stage === 'uploaded'" class="upload-complete-info">
+                                    <div class="upload-status">✓ Upload complete</div>
+                                    <div class="upload-details">
+                                        <span><strong>Title:</strong> {{ uploadModal.recordTitle }}</span>
+                                        <span><strong>Duration:</strong> {{ formatDuration(uploadModal.duration) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hotwords-section">
+                                <label for="hotwords">Hotwords (optional):</label>
+                                <textarea
+                                    id="hotwords"
+                                    v-model="uploadModal.hotwords"
+                                    placeholder="Enter hotwords, one per line with optional weight&#10;example_word 10"
+                                    rows="4"
+                                    class="hotwords-textarea"
+                                    :disabled="uploadModal.stage === 'uploading'"
+                                ></textarea>
+                                <div class="hotwords-help">
+                                    Stored as processing hints for the external ASR service when supported.
+                                </div>
+                            </div>
+
+                            <div v-if="uploadModal.stage === 'uploaded'" class="processing-controls">
+                                <button class="btn-primary" @click="startProcessing">
+                                    <i class="fas fa-cog"></i> Start Processing
+                                </button>
+                                <button class="btn-secondary" @click="viewUploadedRecord">
+                                    <i class="fas fa-eye"></i> View Record
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-else-if="uploadModal.stage === 'processing'" class="upload-processing">
+                            <div class="progress-info">
+                                <div class="progress-label">
+                                    <i class="fas fa-cog fa-spin"></i>
+                                    Processing with AI transcription...
+                                </div>
+                                <div class="processing-steps">
+                                    <div class="step completed">
+                                        <i class="fas fa-check"></i> File uploaded
+                                    </div>
+                                    <div class="step" :class="{ active: uploadModal.processingStep === 'queued' || uploadModal.processingStep === 'transcribing', completed: uploadModal.processingStep === 'summarizing' || uploadModal.processingStep === 'completed' }">
+                                        <i v-if="uploadModal.processingStep === 'queued' || uploadModal.processingStep === 'transcribing'" class="fas fa-spinner fa-spin"></i>
+                                        <i v-else-if="uploadModal.processingStep === 'summarizing' || uploadModal.processingStep === 'completed'" class="fas fa-check"></i>
+                                        <i v-else class="fas fa-microphone"></i>
+                                        Transcribing
+                                    </div>
+                                    <div class="step" :class="{ active: uploadModal.processingStep === 'summarizing', completed: uploadModal.processingStep === 'completed' }">
+                                        <i v-if="uploadModal.processingStep === 'summarizing'" class="fas fa-spinner fa-spin"></i>
+                                        <i v-else-if="uploadModal.processingStep === 'completed'" class="fas fa-check"></i>
+                                        <i v-else class="fas fa-brain"></i>
+                                        LLM Summary
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-else-if="uploadModal.stage === 'complete'" class="upload-complete">
+                            <div class="success-info">
+                                <i class="fas fa-check-circle success-icon"></i>
+                                <div class="success-message">Audio processed successfully</div>
+                                <div class="upload-record-info">
+                                    <div><strong>Title:</strong> {{ uploadModal.recordTitle }}</div>
+                                    <div><strong>Duration:</strong> {{ formatDuration(uploadModal.duration) }}</div>
+                                </div>
+                            </div>
+
+                            <div class="completion-actions">
+                                <button class="btn-primary" @click="viewUploadedRecord">
+                                    <i class="fas fa-eye"></i> View Transcription
+                                </button>
+                                <button class="btn-secondary" @click="resetUploadModal">
+                                    <i class="fas fa-plus"></i> Upload Another
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-else-if="uploadModal.stage === 'error'" class="upload-error">
+                            <div class="error-info">
+                                <i class="fas fa-exclamation-circle error-icon"></i>
+                                <div class="error-message">{{ uploadModal.error }}</div>
+                                <button class="btn-secondary" @click="resetUploadModal">
+                                    <i class="fas fa-redo"></i> Try Again
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="toast.show" class="toast" :class="toast.type">
+                {{ toast.message }}
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

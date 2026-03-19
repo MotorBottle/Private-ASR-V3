@@ -1,0 +1,19 @@
+.DS_Store
+# Local runtime configuration
+.env
+.env.local
+.env.*.local
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.cache/
+tmp/
+logs/
+*.log
+uploads/
+storage/
+data/
+postgres-data/
+docker-data/

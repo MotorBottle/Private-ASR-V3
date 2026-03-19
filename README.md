@@ -45,6 +45,41 @@ Then open `http://localhost:8080`.
 
 Runtime configuration is loaded from [.env](./.env). A sanitized template lives in [.env.example](./.env.example). Docker Compose passes `.env` into both `api` and `worker`, and the services also load `/app/.env` directly for non-Docker local runs.
 
+## Related Projects
+
+- [ASR_API_V2](https://github.com/MotorBottle/ASR_API_V2): the self-hosted ASR service used by this workspace for transcription
+
+This repository does not vendor the ASR service as a submodule. `Private-ASR-V3` treats transcription as an external dependency and connects to it through `ASR_API_URL`.
+
+## External Service Configuration
+
+Configure external providers in [.env](./.env) by following the field descriptions in [.env.example](./.env.example).
+
+### ASR
+
+Point the workspace to your deployed ASR service:
+
+- `ASR_API_URL`
+- `ASR_LANGUAGE`
+- `ASR_TIMEOUT`
+
+The recommended ASR implementation is [ASR_API_V2](https://github.com/MotorBottle/ASR_API_V2).
+
+Speaker diarization is enabled by default in the worker. Hotwords are request-level input from the UI/API and are forwarded to the ASR provider when present, so neither of them is configured through `.env`.
+
+### LLM
+
+LLM-based summary generation is configured the same way through `.env`:
+
+- `LLM_API_BASE`
+- `LLM_API_KEY`
+- `LLM_MODEL`
+- `LLM_TIMEOUT`
+- `LLM_BATCH_MAX_LENGTH`
+- `LLM_BATCH_DELAY_MS`
+
+In practice, just copy `.env.example` to `.env` and fill in the LLM endpoint and key for your provider.
+
 ## LLM Summary Notes
 
 The worker supports long-transcript summary batching.

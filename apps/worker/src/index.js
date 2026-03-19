@@ -233,10 +233,10 @@ async function callAsrProvider(record, input = {}) {
     'language',
     normalizeAsrLanguage(input.language_hint || process.env.ASR_LANGUAGE || 'zh')
   );
-  if (process.env.ASR_ENABLE_HOTWORDS === 'true' && input.hotwords && String(input.hotwords).trim()) {
+  if (input.hotwords && String(input.hotwords).trim()) {
     form.append('hotwords', String(input.hotwords).trim());
   }
-  form.append('enable_speaker_diarization', String(process.env.ASR_SPEAKER_DIARIZATION !== 'false'));
+  form.append('enable_speaker_diarization', 'true');
   form.append('output_format', 'both');
 
   const response = await axios.post(`${process.env.ASR_API_URL}/transcribe`, form, {

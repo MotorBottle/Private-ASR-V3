@@ -198,6 +198,9 @@ function normalizeRecord(record) {
   const status = record.processing_status || record.status || 'uploaded';
   return {
     ...record,
+    hotwords: String(record.hotwords || ''),
+    brief_summary: String(record.brief_summary || ''),
+    brief_summary_initialized: Number(record.brief_summary_initialized || 0),
     duration,
     received_at: record.received_at || record.created_at,
     processing_status: status,
@@ -232,6 +235,12 @@ createApp({
       currentRecord: null,
       detailTitleEdit: '',
       editingDetailTitle: false,
+      editingHotwords: false,
+      editingHotwordsValue: '',
+      savingHotwords: false,
+      editingBriefSummary: false,
+      editingBriefSummaryValue: '',
+      savingBriefSummary: false,
       activeTab: 'transcript',
       refreshing: false,
       reprocessing: false,
@@ -398,6 +407,15 @@ createApp({
         clearTimeout(this.uploadPollTimer);
         this.uploadPollTimer = null;
       }
+    },
+
+    resetRecordInfoEditors() {
+      this.editingHotwords = false;
+      this.editingHotwordsValue = '';
+      this.savingHotwords = false;
+      this.editingBriefSummary = false;
+      this.editingBriefSummaryValue = '';
+      this.savingBriefSummary = false;
     },
 
     shouldPollStatus(status) {
@@ -573,6 +591,12 @@ createApp({
       if (!silent || !this.editingDetailTitle) {
         this.detailTitleEdit = normalizedRecord.title;
       }
+      if (!this.editingHotwords) {
+        this.editingHotwordsValue = normalizedRecord.hotwords || '';
+      }
+      if (!this.editingBriefSummary) {
+        this.editingBriefSummaryValue = normalizedRecord.brief_summary || '';
+      }
 
       this.editableSegments = (segmentsResponse.segments || []).map((segment) => ({
         ...segment,
@@ -593,6 +617,7 @@ createApp({
 
     async viewRecord(record) {
       try {
+        this.resetRecordInfoEditors();
         await this.loadRecordDetail(record.id);
         this.currentView = 'detail';
         this.activeTab = 'transcript';
@@ -635,6 +660,7 @@ createApp({
     },
 
     goBack() {
+      this.resetRecordInfoEditors();
       this.currentView = 'home';
       this.currentRecord = null;
       this.activeTab = 'transcript';
@@ -652,6 +678,82 @@ createApp({
       this.$nextTick(() => {
         this.$refs.detailTitleInput?.focus();
       });
+    },
+
+    startEditingHotwords() {
+      if (!this.currentRecord) return;
+      this.editingHotwords = true;
+      this.editingHotwordsValue = this.currentRecord.hotwords || '';
+    },
+
+    cancelEditingHotwords() {
+      this.editingHotwords = false;
+      this.editingHotwordsValue = this.currentRecord?.hotwords || '';
+    },
+
+    async saveHotwords() {
+      if (!this.currentRecord) return;
+
+      this.savingHotwords = true;
+      const hotwords = this.editingHotwordsValue.trim();
+
+      try {
+        await request(`/records/${this.currentRecord.id}/transcription/regenerate`, {
+          method: 'POST',
+          body: {
+            hotwords,
+            language_hint: this.currentRecord.language_hint || null,
+            summary_enabled: true
+          }
+        });
+
+        this.editingHotwords = false;
+        this.currentRecord.hotwords = hotwords;
+        this.currentRecord.processing_status = 'queued';
+        this.currentRecord.status = 'queued';
+        await this.refreshRecord(true);
+        this.showToast('Reprocessing with updated hotwords...', 'success');
+      } catch (error) {
+        console.error('Failed to reprocess with updated hotwords:', error);
+        this.showToast(error.message, 'error');
+      } finally {
+        this.savingHotwords = false;
+      }
+    },
+
+    startEditingBriefSummary() {
+      if (!this.currentRecord) return;
+      this.editingBriefSummary = true;
+      this.editingBriefSummaryValue = this.currentRecord.brief_summary || '';
+    },
+
+    cancelEditingBriefSummary() {
+      this.editingBriefSummary = false;
+      this.editingBriefSummaryValue = this.currentRecord?.brief_summary || '';
+    },
+
+    async saveBriefSummary() {
+      if (!this.currentRecord) return;
+
+      this.savingBriefSummary = true;
+      try {
+        const updated = await request(`/records/${this.currentRecord.id}`, {
+          method: 'PATCH',
+          body: {
+            brief_summary: this.editingBriefSummaryValue.trim()
+          }
+        });
+
+        this.currentRecord = normalizeRecord(updated);
+        this.editingBriefSummary = false;
+        this.editingBriefSummaryValue = this.currentRecord.brief_summary;
+        this.showToast('Content brief updated', 'success');
+      } catch (error) {
+        console.error('Failed to update content brief:', error);
+        this.showToast(error.message, 'error');
+      } finally {
+        this.savingBriefSummary = false;
+      }
     },
 
     async saveDetailTitle() {
@@ -796,6 +898,8 @@ createApp({
         await request(`/records/${this.currentRecord.id}/transcription/regenerate`, {
           method: 'POST',
           body: {
+            hotwords: this.currentRecord.hotwords || '',
+            language_hint: this.currentRecord.language_hint || null,
             summary_enabled: true
           }
         });

@@ -97,6 +97,26 @@ function buildFallbackSummary(record, transcript) {
   return `## Summary\n\n- Title: ${record.title}\n- Status: bootstrap summary fallback\n- Transcript length: ${transcript.length} chars\n- Non-empty lines: ${lineCount}\n\n## Preview\n\n${preview || 'No transcript content available.'}`;
 }
 
+function normalizeSingleLineText(value, maxLength = 200) {
+  return String(value || '')
+    .replace(/\r/g, ' ')
+    .replace(/\n+/g, ' ')
+    .replace(/^[#>*\-\s`]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function buildFallbackBriefSummary(record, summary, transcript) {
+  const summaryLines = String(summary || '')
+    .split('\n')
+    .map((line) => normalizeSingleLineText(line))
+    .filter(Boolean);
+
+  const transcriptPreview = normalizeSingleLineText(String(transcript || '').slice(0, 220));
+  return summaryLines[0] || transcriptPreview || `Audio record: ${record.title}`;
+}
+
 function sleep(ms) {
   if (ms <= 0) {
     return Promise.resolve();
@@ -219,6 +239,35 @@ Partial summaries:
 ${batchSummaries}`
     }
   ]);
+}
+
+async function callBriefSummaryProvider(record, summary) {
+  const normalizedSummary = String(summary || '').trim();
+  const transcript = String(record.transcript || '');
+
+  if (!normalizedSummary) {
+    return buildFallbackBriefSummary(record, normalizedSummary, transcript);
+  }
+
+  if (!process.env.LLM_API_KEY) {
+    return buildFallbackBriefSummary(record, normalizedSummary, transcript);
+  }
+
+  const briefSummary = await requestLlm([
+    {
+      role: 'system',
+      content: 'Write one plain-text sentence describing the audio content for retrieval indexing. Use the same primary language as the provided summary. No markdown. No bullet points. Keep it under 40 words.'
+    },
+    {
+      role: 'user',
+      content: `Record title: ${record.title}
+
+Summary:
+${normalizedSummary}`
+    }
+  ]);
+
+  return normalizeSingleLineText(briefSummary) || buildFallbackBriefSummary(record, normalizedSummary, transcript);
 }
 
 async function callAsrProvider(record, input = {}) {
@@ -361,6 +410,7 @@ async function handleSummary(job) {
   if (!record) {
     throw new Error('Record not found');
   }
+  const input = JSON.parse(job.input_json || '{}');
 
   await runQuery(
     'UPDATE records SET status = ?, last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -368,11 +418,24 @@ async function handleSummary(job) {
   );
 
   const summary = await callSummaryProvider(record);
+  let briefSummary = String(record.brief_summary || '').trim();
+  let briefSummaryInitialized = Number(record.brief_summary_initialized || 0);
+
+  if (!briefSummaryInitialized && input.source === 'auto') {
+    try {
+      briefSummary = await callBriefSummaryProvider(record, summary);
+    } catch (error) {
+      console.warn(`Failed to generate brief summary for record ${record.id}: ${error.message}`);
+      briefSummary = buildFallbackBriefSummary(record, summary, record.transcript || '');
+    }
+    briefSummaryInitialized = 1;
+  }
+
   await runQuery(
     `UPDATE records
-     SET summary = ?, status = ?, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+     SET summary = ?, brief_summary = ?, brief_summary_initialized = ?, status = ?, last_error = NULL, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [summary, 'completed', record.id]
+    [summary, briefSummary, briefSummaryInitialized, 'completed', record.id]
   );
 }
 

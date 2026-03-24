@@ -46,6 +46,15 @@ function allQuery(sql, params = []) {
   });
 }
 
+async function ensureColumn(tableName, columnName, definition) {
+  const columns = await allQuery(`PRAGMA table_info(${tableName})`);
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  await runQuery(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
 async function initDatabase() {
   await runQuery('PRAGMA journal_mode = WAL');
   await runQuery('PRAGMA foreign_keys = ON');
@@ -68,6 +77,9 @@ async function initDatabase() {
     source_mime TEXT,
     transcript TEXT DEFAULT '',
     summary TEXT,
+    brief_summary TEXT DEFAULT '',
+    brief_summary_initialized INTEGER NOT NULL DEFAULT 0,
+    hotwords TEXT DEFAULT '',
     tags_json TEXT DEFAULT '[]',
     duration_seconds REAL DEFAULT 0,
     language_hint TEXT,
@@ -76,6 +88,13 @@ async function initDatabase() {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
   )`);
+
+  await ensureColumn('records', 'brief_summary', "TEXT DEFAULT ''");
+  await ensureColumn('records', 'brief_summary_initialized', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('records', 'hotwords', "TEXT DEFAULT ''");
+  await runQuery("UPDATE records SET brief_summary = '' WHERE brief_summary IS NULL");
+  await runQuery('UPDATE records SET brief_summary_initialized = 0 WHERE brief_summary_initialized IS NULL');
+  await runQuery("UPDATE records SET hotwords = '' WHERE hotwords IS NULL");
 
   await runQuery(`CREATE TABLE IF NOT EXISTS segments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

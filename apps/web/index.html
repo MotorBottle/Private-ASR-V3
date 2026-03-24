@@ -323,6 +323,65 @@
                                                 <label class="info-label">Language:</label>
                                                 <span class="info-value">{{ currentRecord?.language_hint || 'Default' }}</span>
                                             </div>
+                                            <div class="info-row hotwords-row">
+                                                <label class="info-label">Hotwords:</label>
+                                                <div class="hotwords-container">
+                                                    <div v-if="!editingHotwords" class="hotwords-display">
+                                                        <span class="info-value hotwords-value">{{ currentRecord?.hotwords || 'None' }}</span>
+                                                        <button @click="startEditingHotwords" class="edit-hotwords-btn" title="Edit hotwords">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div v-else class="hotwords-edit">
+                                                        <textarea
+                                                            v-model="editingHotwordsValue"
+                                                            class="hotwords-input"
+                                                            placeholder="Enter hotwords, one per line"
+                                                            rows="3"
+                                                            @keydown.escape.prevent="cancelEditingHotwords"
+                                                        ></textarea>
+                                                        <div class="hotwords-actions">
+                                                            <button @click="saveHotwords" class="save-hotwords-btn" :disabled="savingHotwords">
+                                                                <i class="fas fa-sync-alt" :class="{ 'fa-spin': savingHotwords }"></i>
+                                                                {{ savingHotwords ? 'Saving...' : 'Save & Reprocess' }}
+                                                            </button>
+                                                            <button @click="cancelEditingHotwords" class="cancel-hotwords-btn" :disabled="savingHotwords">
+                                                                <i class="fas fa-times"></i> Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="info-row hotwords-row">
+                                                <label class="info-label">Content Brief:</label>
+                                                <div class="hotwords-container">
+                                                    <div v-if="!editingBriefSummary" class="hotwords-display">
+                                                        <span class="info-value hotwords-value">{{ currentRecord?.brief_summary || 'Not generated yet' }}</span>
+                                                        <button @click="startEditingBriefSummary" class="edit-hotwords-btn" title="Edit content brief">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div v-else class="hotwords-edit">
+                                                        <textarea
+                                                            v-model="editingBriefSummaryValue"
+                                                            class="hotwords-input"
+                                                            placeholder="Write a one-line description for retrieval"
+                                                            rows="3"
+                                                            @keydown.escape.prevent="cancelEditingBriefSummary"
+                                                        ></textarea>
+                                                        <div class="hotwords-actions">
+                                                            <button @click="saveBriefSummary" class="save-hotwords-btn" :disabled="savingBriefSummary">
+                                                                <i class="fas fa-check" v-if="!savingBriefSummary"></i>
+                                                                <i class="fas fa-spinner fa-spin" v-else></i>
+                                                                {{ savingBriefSummary ? 'Saving...' : 'Save' }}
+                                                            </button>
+                                                            <button @click="cancelEditingBriefSummary" class="cancel-hotwords-btn" :disabled="savingBriefSummary">
+                                                                <i class="fas fa-times"></i> Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 

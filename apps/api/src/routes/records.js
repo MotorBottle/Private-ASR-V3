@@ -99,10 +99,14 @@ function getUploadedFile(req) {
 }
 
 function mapRecord(record) {
+  const { tags_json: tagsJson, duration_seconds: durationSeconds, ...rest } = record;
   return {
-    ...record,
-    tags: parseJsonArray(record.tags_json),
-    duration: Number(record.duration_seconds || 0),
+    ...rest,
+    hotwords: String(record.hotwords || ''),
+    brief_summary: String(record.brief_summary || ''),
+    brief_summary_initialized: Number(record.brief_summary_initialized || 0),
+    tags: parseJsonArray(tagsJson),
+    duration: Number(durationSeconds || 0),
     received_at: record.created_at,
     processing_status: record.status
   };
@@ -140,12 +144,13 @@ async function createRecordFromUpload({ userId, uploadedFile, body, status = 'up
   const tags = parseJsonArray(body.tags);
   const languageHint = body.language_hint || null;
   const durationSeconds = Number.parseFloat(body.duration || '0') || 0;
+  const hotwords = String(body.hotwords || '').trim();
 
   await runQuery(
     `INSERT INTO records (
       id, user_id, title, status, source_filename, stored_filename, source_mime,
-      tags_json, duration_seconds, language_hint, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      tags_json, duration_seconds, language_hint, hotwords, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       recordId,
       userId,
@@ -157,6 +162,7 @@ async function createRecordFromUpload({ userId, uploadedFile, body, status = 'up
       JSON.stringify(tags),
       durationSeconds,
       languageHint,
+      hotwords,
       now,
       now
     ]
@@ -205,14 +211,29 @@ async function updateRecordMetadata(req, res) {
     const record = await ensureRecordForMutation(req, res);
     if (!record) return;
 
-    const nextTitle = buildTitle(req.body.title || record.title, record.source_filename);
+    const nextTitle = req.body.title !== undefined
+      ? buildTitle(req.body.title, record.source_filename)
+      : record.title;
     const nextTags = req.body.tags !== undefined
       ? JSON.stringify(parseJsonArray(req.body.tags))
       : record.tags_json;
+    const nextHotwords = req.body.hotwords !== undefined
+      ? String(req.body.hotwords || '').trim()
+      : String(record.hotwords || '').trim();
+    const hasBriefSummaryUpdate = req.body.brief_summary !== undefined;
+    const nextBriefSummary = hasBriefSummaryUpdate
+      ? String(req.body.brief_summary || '').trim()
+      : String(record.brief_summary || '').trim();
+    const nextBriefSummaryInitialized = hasBriefSummaryUpdate
+      ? 1
+      : Number(record.brief_summary_initialized || 0);
 
     await runQuery(
-      'UPDATE records SET title = ?, tags_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [nextTitle, nextTags, req.params.id]
+      `UPDATE records
+       SET title = ?, tags_json = ?, hotwords = ?, brief_summary = ?, brief_summary_initialized = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [nextTitle, nextTags, nextHotwords, nextBriefSummary, nextBriefSummaryInitialized, req.params.id]
     );
 
     const updated = await getOwnedRecord(req.params.id, req.user.userId);
@@ -237,8 +258,8 @@ router.post('/search', authenticateToken, async (req, res) => {
     const params = [req.user.userId];
 
     if (query) {
-      sql += ' AND (title LIKE ? OR transcript LIKE ? OR IFNULL(summary, \'\') LIKE ?)';
-      params.push(`%${query}%`, `%${query}%`, `%${query}%`);
+      sql += ' AND (title LIKE ? OR transcript LIKE ? OR IFNULL(summary, \'\') LIKE ? OR IFNULL(brief_summary, \'\') LIKE ?)';
+      params.push(`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`);
     }
 
     if (filters.status && Array.isArray(filters.status) && filters.status.length > 0) {
@@ -329,8 +350,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const params = [req.user.userId];
 
     if (search) {
-      sql += ' AND (title LIKE ? OR transcript LIKE ? OR IFNULL(summary, \'\') LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      sql += ' AND (title LIKE ? OR transcript LIKE ? OR IFNULL(summary, \'\') LIKE ? OR IFNULL(brief_summary, \'\') LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     if (status) {
@@ -353,11 +374,18 @@ router.post('/:id/process', authenticateToken, async (req, res) => {
     const record = await ensureRecordForMutation(req, res);
     if (!record) return;
 
+    const hotwords = req.body.hotwords === undefined
+      ? String(record.hotwords || '').trim()
+      : String(req.body.hotwords || '').trim();
     const input = {
       summary_enabled: parseBoolean(req.body.summary_enabled, true),
       language_hint: req.body.language_hint || record.language_hint || null,
-      hotwords: String(req.body.hotwords || '').trim()
+      hotwords
     };
+    await runQuery(
+      'UPDATE records SET hotwords = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [hotwords, req.params.id]
+    );
     const jobId = await queueTranscriptionJob({
       recordId: req.params.id,
       userId: req.user.userId,
@@ -600,6 +628,13 @@ router.post('/:id/transcription/regenerate', authenticateToken, async (req, res)
     const record = await ensureRecordForMutation(req, res);
     if (!record) return;
 
+    const hotwords = req.body.hotwords === undefined
+      ? String(record.hotwords || '').trim()
+      : String(req.body.hotwords || '').trim();
+    await runQuery(
+      'UPDATE records SET hotwords = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [hotwords, req.params.id]
+    );
     const jobId = await queueTranscriptionJob({
       recordId: req.params.id,
       userId: req.user.userId,
@@ -609,7 +644,7 @@ router.post('/:id/transcription/regenerate', authenticateToken, async (req, res)
           ? true
           : parseBoolean(req.body.summary_enabled, true),
         language_hint: req.body.language_hint || record.language_hint || null,
-        hotwords: String(req.body.hotwords || '').trim()
+        hotwords
       }
     });
 

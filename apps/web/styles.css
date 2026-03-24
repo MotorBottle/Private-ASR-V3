@@ -974,14 +974,16 @@ body {
     min-height: 0; /* Allow flex child to shrink for scrolling */
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+    padding-right: 10px;
+    -webkit-overflow-scrolling: touch;
 }
 
 .tab-pane-content {
     flex: 1;
-    min-height: 0; /* Allow scrolling to work properly */
-    overflow-y: auto;
-    padding-right: 10px;
-    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+    overflow: visible;
+    padding-right: 0;
 }
 
 .tab-pane > h3 {
@@ -1440,8 +1442,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: 500px;
-    overflow-y: auto;
+    max-height: none;
+    overflow: visible;
 }
 
 .srt-block {
@@ -2344,8 +2346,8 @@ body {
     padding: 16px;
     border-radius: 8px;
     margin: 10px 0;
-    max-height: 500px;
-    overflow-y: auto;
+    max-height: none;
+    overflow: visible;
 }
 
 .markdown-content h1 {

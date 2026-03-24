@@ -45,6 +45,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-}
     depends_on:
       api:
         condition: service_healthy

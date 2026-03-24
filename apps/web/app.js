@@ -1,6 +1,7 @@
 const { createApp } = Vue;
 
-const apiBase = '/api/v1';
+const apiBase = window.APP_CONFIG?.API_BASE_URL || '/api/v1';
+console.log('Using API_BASE_URL:', apiBase);
 const tokenKey = 'private_asr_token';
 const userKey = 'private_asr_user';
 

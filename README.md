@@ -43,7 +43,9 @@ docker compose up
 
 Then open `http://localhost:8080`.
 
-Runtime configuration is loaded from [.env](./.env). A sanitized template lives in [.env.example](./.env.example). Docker Compose passes `.env` into both `api` and `worker`, and the services also load `/app/.env` directly for non-Docker local runs.
+Runtime configuration is loaded from [.env](./.env). A sanitized template lives in [.env.example](./.env.example). Docker Compose passes `.env` into both `api`, `worker`, and `web`, and the services also load `/app/.env` directly for non-Docker local runs.
+
+For the `web` service, the frontend backend endpoint is injected at container start through `API_BASE_URL`. If left blank, the UI falls back to `http(s)://<current-host>:3000/api/v1`.
 
 ## Related Projects
 
@@ -54,6 +56,16 @@ This repository does not vendor the ASR service as a submodule. `Private-ASR-V3`
 ## External Service Configuration
 
 Configure external providers in [.env](./.env) by following the field descriptions in [.env.example](./.env.example).
+
+### Web App Backend Endpoint
+
+Set `API_BASE_URL` to the full browser-facing app backend base URL, for example:
+
+- `https://asrapi.example.com/api/v1`
+
+If `API_BASE_URL` is left empty, the frontend falls back to the current host on port `3000`, matching the old repo's split deployment convention.
+
+For production, set `API_BASE_URL` explicitly. Also include your frontend origin in `FRONTEND_URL` so the API CORS allowlist matches the deployed site.
 
 ### ASR
 
